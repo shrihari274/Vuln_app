@@ -44,7 +44,7 @@ pipeline {
                 script {
                     echo "Scanning ${IMAGE_NAME} for vulnerabilities..."
                     // Note: You must have a Jenkins credential with this ID
-                    def scanResult = withCredentials([string(credentialsId: 'YOUR_DEEPFENCE_CREDS_ID', variable: 'DEEPFENCE_API_KEY_FROM_CREDS')]) {
+                    def scanResult = withCredentials([string(credentialsId: 'deepfence-api-key', variable: 'DEEPFENCE_API_KEY_FROM_CREDS')]) {
                         sh(
                             script: """
                                 docker run --rm --net=host -v /var/run/docker.sock:/var/run/docker.sock:rw \\
