@@ -1,4 +1,4 @@
-pipeline {
+peline {
     agent any // Run on any available Jenkins agent
 
     environment {
@@ -7,7 +7,7 @@ pipeline {
         IMAGE_NAME = "vuln-flask-app:${BUILD_NUMBER}"
         // ThreatMapper console details
         DEEPFENCE_CONSOLE_URL = '192.168.74.125'
-        DEEPFENCE_KEY = 'ZGVmYXVsdDpjNTdlNjlhNS0yYTJlLTRkYTUtYTM0YS03OTk2NjVlNzE3Yzk'
+        // DEEPFENCE_KEY has been removed and will be injected from Jenkins Credentials
         SCANNER_VERSION = '2.5.2'
 
         // --- Failure Conditions (set to -1 to ignore a check) ---
@@ -30,7 +30,7 @@ pipeline {
         stage('🐳 2. Build Docker Image') {
             steps {
                 echo "Building Docker image: ${IMAGE_NAME}"
-                sh "docker build -t ${IMAGE_NAME} ."
+                sh "docker build -t ${IMAGE_NAME}."
             }
         }
 
@@ -39,14 +39,17 @@ pipeline {
                 script {
                     echo "Scanning ${IMAGE_NAME} for vulnerabilities..."
                     try {
-                        sh """
-                            docker run --rm --net=host -v /var/run/docker.sock:/var/run/docker.sock:rw \
-                            quay.io/deepfenceio/deepfence_package_scanner_cli:${SCANNER_VERSION} \
-                            -console-url=${DEEPFENCE_CONSOLE_URL} -deepfence-key=${DEEPFENCE_KEY} \
-                            -source=${IMAGE_NAME} -scan-type=base,java,python,ruby,php,nodejs,js \
-                            -fail-on-critical-count=${FAIL_ON_CRITICAL_VULNERABILITIES} \
-                            -fail-on-high-count=${FAIL_ON_HIGH_VULNERABILITIES}
-                        """
+                        // Securely inject the API key from Jenkins Credentials
+                        withCredentials() {
+                            sh """
+                                docker run --rm --net=host -v /var/run/docker.sock:/var/run/docker.sock:rw \
+                                quay.io/deepfenceio/deepfence_package_scanner_cli:${SCANNER_VERSION} \
+                                -console-url=${DEEPFENCE_CONSOLE_URL} -deepfence-key=${DEEPFENCE_API_KEY_FROM_CREDS} \
+                                -source=${IMAGE_NAME} -scan-type=base,java,python,ruby,php,nodejs,js \
+                                -fail-on-critical-count=${FAIL_ON_CRITICAL_VULNERABILITIES} \
+                                -fail-on-high-count=${FAIL_ON_HIGH_VULNERABILITIES}
+                            """
+                        }
                     } catch (Exception err) {
                         // The sh command will fail if scan conditions are met, this catches it
                         currentBuild.result = 'FAILURE'
