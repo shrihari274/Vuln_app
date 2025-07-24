@@ -30,7 +30,7 @@ pipeline {
         stage('🐳 2. Build Docker Image') {
             steps {
                 echo "Building Docker image: ${IMAGE_NAME}"
-                sh "docker build -t ${IMAGE_NAME}."
+                sh "docker build -t ${IMAGE_NAME} ${pwd()}"
             }
         }
 
