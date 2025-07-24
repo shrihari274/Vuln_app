@@ -7,7 +7,7 @@ pipeline {
         IMAGE_NAME = "vuln-flask-app:${BUILD_NUMBER}"
         // ThreatMapper console details
         DEEPFENCE_CONSOLE_URL = '192.168.74.125'
-        DEEPFENCE_KEY = 'ZGVmYXVsdDo4YjAwM2Q2YS02MDNlLTRlNWEtOGEzNS0zNzMzOGJjYjc0MWU'
+        DEEPFENCE_KEY = 'ZGVmYXVsdDpjNTdlNjlhNS0yYTJlLTRkYTUtYTM0YS03OTk2NjVlNzE3Yzk'
         SCANNER_VERSION = '2.5.2'
 
         // --- Failure Conditions (set to -1 to ignore a check) ---
