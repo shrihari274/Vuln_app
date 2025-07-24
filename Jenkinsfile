@@ -1,4 +1,4 @@
-peline {
+pipeline {
     agent any // Run on any available Jenkins agent
 
     environment {
