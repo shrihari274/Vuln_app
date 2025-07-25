@@ -7,9 +7,6 @@ pipeline {
         DEEPFENCE_CONSOLE_URL = '192.168.74.125'
         SCANNER_VERSION = '2.5.2'
 
-        // 👇 Your actual ThreatMapper API key here (base64 encoded)
-        DEEPFENCE_API_KEY = 'ZGVmYXVsdDoyYzNhZGVmZi00ZjA4LTQ1MmItOGI1Yi1lMzMxOGYwNzAxYTU'
-
         // --- Failure Conditions ---
         FAIL_ON_CRITICAL_VULNERABILITIES = 100000000
         FAIL_ON_HIGH_VULNERABILITIES = 50000000000
@@ -36,14 +33,16 @@ pipeline {
                 script {
                     echo "Scanning ${IMAGE_NAME} for vulnerabilities..."
                     try {
-                        sh """
-                            docker run --rm --net=host -v /var/run/docker.sock:/var/run/docker.sock:rw \
-                            quay.io/deepfenceio/deepfence_package_scanner_cli:${SCANNER_VERSION} \
-                            -console-url=${DEEPFENCE_CONSOLE_URL} -deepfence-key=${DEEPFENCE_API_KEY} \
-                            -source=${IMAGE_NAME} -scan-type=base,java,python,ruby,php,nodejs,js \
-                            -fail-on-critical-count=${FAIL_ON_CRITICAL_VULNERABILITIES} \
-                            -fail-on-high-count=${FAIL_ON_HIGH_VULNERABILITIES}
-                        """
+                        withCredentials([string(credentialsId: 'deepfence_api_key', variable: 'DEEPFENCE_API_KEY')]) {
+                            sh """
+                                docker run --rm --net=host -v /var/run/docker.sock:/var/run/docker.sock:rw \
+                                quay.io/deepfenceio/deepfence_package_scanner_cli:${SCANNER_VERSION} \
+                                -console-url=${DEEPFENCE_CONSOLE_URL} -deepfence-key=${DEEPFENCE_API_KEY} \
+                                -source=${IMAGE_NAME} -scan-type=base,java,python,ruby,php,nodejs,js \
+                                -fail-on-critical-count=${FAIL_ON_CRITICAL_VULNERABILITIES} \
+                                -fail-on-high-count=${FAIL_ON_HIGH_VULNERABILITIES}
+                            """
+                        }
                     } catch (Exception err) {
                         currentBuild.result = 'FAILURE'
                         error("❌ Vulnerability scan failed. Check logs for details.")
@@ -93,7 +92,7 @@ pipeline {
         stage('🚀 6. Deploy') {
             steps {
                 echo "✅ All scans passed! Deploying the application..."
-                // sh "docker run -d -p 5000:5000 ${IMAGE_NAME}"
+                // Example: sh "docker run -d -p 5000:5000 ${IMAGE_NAME}"
             }
         }
     }
