@@ -1,10 +1,11 @@
+// Helper function to create a text-based bar graph for reports
 def generateBar(label, count, max_bar_width = 50) {
     if (count == 0) return ""
     // Use a different character for each report type for visual flair
     def bar_char = "█"
     if (label.toLowerCase().contains('secret')) bar_char = "🔑"
     if (label.toLowerCase().contains('malware')) bar_char = "🦠"
-    
+
     def bar = bar_char * count
     return "${label.padRight(10)} [${count.toString().padLeft(3)}] | ${bar}"
 }
@@ -17,7 +18,7 @@ pipeline {
         IMAGE_NAME = "vuln-flask-app:${BUILD_NUMBER}"
         DEEPFENCE_CONSOLE_URL = '192.168.74.125'
         SCANNER_VERSION = '2.5.2'
-        
+
         // --- Failure Conditions (set to -1 to ignore a check) ---
         FAIL_ON_CRITICAL_VULNERABILITIES = 1
         FAIL_ON_HIGH_VULNERABILITIES = 5
@@ -43,7 +44,7 @@ pipeline {
             steps {
                 script {
                     echo "Scanning ${IMAGE_NAME} for vulnerabilities..."
-                    // Note: You must have a Jenkins credential with this ID
+                    // CORRECTED a few lines down
                     def scanResult = withCredentials([string(credentialsId: 'deepfence-api-key', variable: 'DEEPFENCE_API_KEY_FROM_CREDS')]) {
                         sh(
                             script: """
@@ -51,7 +52,7 @@ pipeline {
                                 quay.io/deepfenceio/deepfence_package_scanner_cli:${SCANNER_VERSION} \\
                                 -console-url=${DEEPFENCE_CONSOLE_URL} -deepfence-key=${DEEPFENCE_API_KEY_FROM_CREDS} \\
                                 -source=${IMAGE_NAME} -scan-type=base,python \\
-                                -output-format json
+                                -output json
                             """,
                             returnStdout: true,
                             returnStatus: true
@@ -60,7 +61,7 @@ pipeline {
 
                     // --- Vulnerability Report Generation ---
                     def criticalCount = 0, highCount = 0, mediumCount = 0, lowCount = 0
-                    if (scanResult.stdout) {
+                    if (scanResult.status == 0 && scanResult.stdout) {
                         def data = readJSON(text: scanResult.stdout)
                         data.each { scan ->
                             scan.vulnerabilities.each { v ->
@@ -113,20 +114,21 @@ pipeline {
             steps {
                 script {
                     echo "Scanning ${IMAGE_NAME} for secrets..."
+                    // CORRECTED a few lines down
                     def scanResult = sh(
                         script: """
                             docker run --rm --net=host -v /var/run/docker.sock:/var/run/docker.sock:rw \\
                             quay.io/deepfenceio/deepfence_secret_scanner:${SCANNER_VERSION} \\
                             -image-name=${IMAGE_NAME} \\
-                            -output-format json
+                            -output json
                         """,
                         returnStdout: true,
                         returnStatus: true
                     )
-                    
+
                     // --- Secret Report Generation ---
                     def highSecrets = 0, mediumSecrets = 0, lowSecrets = 0
-                    if(scanResult.stdout) {
+                    if(scanResult.status == 0 && scanResult.stdout) {
                         def data = readJSON(text: scanResult.stdout)
                         data.secrets.each { secret ->
                             switch(secret.Severity?.toLowerCase()) {
@@ -164,12 +166,13 @@ pipeline {
             steps {
                 script {
                     echo "Scanning ${IMAGE_NAME} for malware..."
+                    // CORRECTED a few lines down
                      def scanResult = sh(
                         script: """
                             docker run --rm --net=host -v /var/run/docker.sock:/var/run/docker.sock:rw \\
                             quay.io/deepfenceio/deepfence_malware_scanner:${SCANNER_VERSION} \\
                             -image-name=${IMAGE_NAME} \\
-                            -output-format json
+                            -output json
                         """,
                         returnStdout: true,
                         returnStatus: true
@@ -177,7 +180,7 @@ pipeline {
 
                     // --- Malware Report Generation ---
                     def highMalware = 0, mediumMalware = 0, lowMalware = 0
-                    if(scanResult.stdout) {
+                    if(scanResult.status == 0 && scanResult.stdout) {
                         def data = readJSON(text: scanResult.stdout)
                         data.each { finding ->
                             switch(finding.Severity?.toLowerCase()) {
@@ -188,7 +191,7 @@ pipeline {
                         }
                     }
                     def totalMalware = highMalware + mediumMalware + lowMalware
-                    
+
                     echo """
                     +--------------------------------------------------+
                     |              MALWARE SCAN SUMMARY                |
