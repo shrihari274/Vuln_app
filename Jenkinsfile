@@ -3,20 +3,14 @@ pipeline {
 
     environment {
         // --- Configuration ---
-        // Your application's image name
         IMAGE_NAME = "vuln-flask-app:${BUILD_NUMBER}"
-        // ThreatMapper console details
         DEEPFENCE_CONSOLE_URL = '192.168.74.125'
-        // DEEPFENCE_KEY has been removed and will be injected from Jenkins Credentials
         SCANNER_VERSION = '2.5.2'
 
-        // --- Failure Conditions (set to -1 to ignore a check) ---
-        // Vulnerability Scan
+        // --- Failure Conditions ---
         FAIL_ON_CRITICAL_VULNERABILITIES = 100000000
         FAIL_ON_HIGH_VULNERABILITIES = 50000000000
-        // Secret Scan
         FAIL_ON_HIGH_SECRETS = 100000000000
-        // Malware Scan
         FAIL_ON_HIGH_MALWARE = 1000000000000
     }
 
@@ -39,8 +33,7 @@ pipeline {
                 script {
                     echo "Scanning ${IMAGE_NAME} for vulnerabilities..."
                     try {
-                        // Securely inject the API key from Jenkins Credentials
-                        withCredentials() {
+                        withCredentials([string(credentialsId: 'deepfence-api-key', variable: 'DEEPFENCE_API_KEY_FROM_CREDS')]) {
                             sh """
                                 docker run --rm --net=host -v /var/run/docker.sock:/var/run/docker.sock:rw \
                                 quay.io/deepfenceio/deepfence_package_scanner_cli:${SCANNER_VERSION} \
@@ -51,9 +44,8 @@ pipeline {
                             """
                         }
                     } catch (Exception err) {
-                        // The sh command will fail if scan conditions are met, this catches it
                         currentBuild.result = 'FAILURE'
-                        error("Vulnerability scan failed. Check logs for details.")
+                        error("❌ Vulnerability scan failed. Check logs for details.")
                     }
                 }
             }
@@ -63,7 +55,7 @@ pipeline {
             steps {
                 script {
                     echo "Scanning ${IMAGE_NAME} for secrets..."
-                     try {
+                    try {
                         sh """
                             docker run --rm --net=host -v /var/run/docker.sock:/var/run/docker.sock:rw \
                             quay.io/deepfenceio/deepfence_secret_scanner:${SCANNER_VERSION} \
@@ -72,7 +64,7 @@ pipeline {
                         """
                     } catch (Exception err) {
                         currentBuild.result = 'FAILURE'
-                        error("Secret scan failed. Check logs for details.")
+                        error("❌ Secret scan failed. Check logs for details.")
                     }
                 }
             }
@@ -82,7 +74,7 @@ pipeline {
             steps {
                 script {
                     echo "Scanning ${IMAGE_NAME} for malware..."
-                     try {
+                    try {
                         sh """
                             docker run --rm --net=host -v /var/run/docker.sock:/var/run/docker.sock:rw \
                             quay.io/deepfenceio/deepfence_malware_scanner:${SCANNER_VERSION} \
@@ -91,7 +83,7 @@ pipeline {
                         """
                     } catch (Exception err) {
                         currentBuild.result = 'FAILURE'
-                        error("Malware scan failed. Check logs for details.")
+                        error("❌ Malware scan failed. Check logs for details.")
                     }
                 }
             }
@@ -99,9 +91,9 @@ pipeline {
 
         stage('🚀 6. Deploy') {
             steps {
-                echo "All scans passed! Deploying the application..."
-                // Add your deployment commands here.
-                // For example: sh "docker run -d -p 5000:5000 ${IMAGE_NAME}"
+                echo "✅ All scans passed! Deploying the application..."
+                // Example deployment:
+                // sh "docker run -d -p 5000:5000 ${IMAGE_NAME}"
             }
         }
     }
