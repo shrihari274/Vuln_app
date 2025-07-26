@@ -1,90 +1,97 @@
 pipeline {
-    agent any
+    agent any // Run on any available Jenkins agent
 
     environment {
-        // Image to build and scan
-        IMAGE_NAME = "vuln-flask-app:${BUILD_NUMBER}"
+        // --- General Configuration ---
+        IMAGE_NAME            = "vuln-flask-app:${BUILD_NUMBER}"
+        DEEPFENCE_CONSOLE_URL = '192.168.74.125'
+        SCANNER_VERSION       = '2.5.2'
+        DEEPFENCE_PRODUCT     = 'ThreatMapper'
 
-        // Deepfence scanner settings
-        SCANNER_VERSION = '2.5.2'
-        DEEPFENCE_CONSOLE_URL = 'https://192.168.74.125'  // Use full URL with https
-        DEEPFENCE_PRODUCT = 'ThreatMapper'
-        DEEPFENCE_LICENSE = '26545419-e7a1-44e8-b6a7-f853e68499c3'  // Must be valid license
-
-        // Thresholds (set high if you don’t want to fail the pipeline)
-        FAIL_CVE_COUNT = 10000000
-        FAIL_CRITICAL_CVE_COUNT = 10000
-        FAIL_HIGH_CVE_COUNT = 5000000
-        FAIL_MEDIUM_CVE_COUNT = 100000
-        FAIL_LOW_CVE_COUNT = 200000
-        FAIL_CVE_SCORE = 800000
+        // --- Vulnerability Failure Conditions (from the official example) ---
+        FAIL_ON_CRITICAL_VULNS = 1
+        FAIL_ON_HIGH_VULNS     = 5
+        FAIL_ON_MEDIUM_VULNS   = 10
+        FAIL_ON_LOW_VULNS      = 20
+        
+        // --- Secrets & Malware Failure Conditions ---
+        FAIL_ON_HIGH_SECRETS   = 1
+        FAIL_ON_HIGH_MALWARE   = 1
     }
 
     stages {
-        stage('1. Checkout Code') {
+        stage('🐙 1. Checkout Code') {
             steps {
                 checkout scm
             }
         }
 
-        stage('2. Build Docker Image') {
+        stage('🐳 2. Build Docker Image') {
             steps {
-                script {
-                    echo "🏗️ Building image: ${IMAGE_NAME}"
-                    sh "docker build -t ${IMAGE_NAME} ."
-                }
+                echo "Building Docker image: ${IMAGE_NAME}"
+                sh "docker build -t ${IMAGE_NAME} ."
             }
         }
 
-        stage('3. Scan with ThreatMapper CLI') {
+        stage('🛡️ 3. Scan for Vulnerabilities') {
             steps {
                 script {
-                    withCredentials([string(credentialsId: 'deepfence_api_key', variable: 'DEEPFENCE_API_KEY')]) {
-                        echo "🔍 Starting scan for image: ${IMAGE_NAME}"
-
-                        // Run the scanner as Docker container inside Jenkins
-                        sh """
-                            docker run --rm --net=host \
-                            -v /var/run/docker.sock:/var/run/docker.sock \
+                    echo "Scanning ${IMAGE_NAME} for vulnerabilities..."
+                    // Securely load BOTH the API key and the License key
+                    withCredentials([
+                        string(credentialsId: 'deepfence-api-key', variable: 'DF_API_KEY'),
+                        string(credentialsId: 'deepfence-license-key', variable: 'DF_LICENSE_KEY')
+                    ]) {
+                        // The sh step now includes -license and -product parameters
+                        sh '''
+                            docker run --rm --net=host -v /var/run/docker.sock:/var/run/docker.sock:rw \
                             quay.io/deepfenceio/deepfence_package_scanner_cli:${SCANNER_VERSION} \
-                            -console-url=${DEEPFENCE_CONSOLE_URL} \
-                            -deepfence-key=${DEEPFENCE_API_KEY} \
-                            -license=${DEEPFENCE_LICENSE} \
-                            -product=${DEEPFENCE_PRODUCT} \
-                            -source=${IMAGE_NAME} \
-                            -fail-on-count=${FAIL_CVE_COUNT} \
-                            -fail-on-critical-count=${FAIL_CRITICAL_CVE_COUNT} \
-                            -fail-on-high-count=${FAIL_HIGH_CVE_COUNT} \
-                            -fail-on-medium-count=${FAIL_MEDIUM_CVE_COUNT} \
-                            -fail-on-low-count=${FAIL_LOW_CVE_COUNT} \
-                            -fail-on-score=${FAIL_CVE_SCORE}
-                        """
+                            -console-url="${DEEPFENCE_CONSOLE_URL}" \
+                            -deepfence-key="${DF_API_KEY}" \
+                            -license="${DF_LICENSE_KEY}" \
+                            -product="${DEEPFENCE_PRODUCT}" \
+                            -source="${IMAGE_NAME}" \
+                            -scan-type="base,java,python,ruby,php,nodejs,js" \
+                            -fail-on-critical-count="${FAIL_ON_CRITICAL_VULNS}" \
+                            -fail-on-high-count="${FAIL_ON_HIGH_VULNS}" \
+                            -fail-on-medium-count="${FAIL_ON_MEDIUM_VULNS}" \
+                            -fail-on-low-count="${FAIL_ON_LOW_VULNS}"
+                        '''
                     }
                 }
             }
         }
 
-        stage('4. Deploy Application') {
-            when {
-                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
-            }
+        stage('🤫 4. Scan for Secrets') {
             steps {
-                echo "🚀 Deploying ${IMAGE_NAME} as scan passed!"
-                // Replace with your deployment command
+                echo "Scanning ${IMAGE_NAME} for secrets..."
+                sh '''
+                    docker run --rm --net=host -v /var/run/docker.sock:/var/run/docker.sock:rw \
+                    quay.io/deepfenceio/deepfence_secret_scanner:${SCANNER_VERSION} \
+                    -image-name="${IMAGE_NAME}" \
+                    -fail-on-high-count="${FAIL_ON_HIGH_SECRETS}"
+                '''
+            }
+        }
+
+        stage('🦠 5. Scan for Malware') {
+            steps {
+                echo "Scanning ${IMAGE_NAME} for malware..."
+                sh '''
+                    docker run --rm --net=host -v /var/run/docker.sock:/var/run/docker.sock:rw \
+                    quay.io/deepfenceio/deepfence_malware_scanner:${SCANNER_VERSION} \
+                    -image-name="${IMAGE_NAME}" \
+                    -fail-on-high-count="${FAIL_ON_HIGH_MALWARE}"
+                '''
+            }
+        }
+
+        stage('🚀 6. Deploy') {
+            steps {
+                echo "✅ All scans passed! Deploying the application..."
+                // Example deployment:
                 // sh "docker run -d -p 5000:5000 ${IMAGE_NAME}"
             }
-        }
-    }
-
-    post {
-        always {
-            echo "🧹 Cleaning up..."
-        }
-        success {
-            echo "✅ Pipeline Success!"
-        }
-        failure {
-            echo "❌ Pipeline Failed!"
         }
     }
 }
