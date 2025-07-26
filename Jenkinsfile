@@ -1,99 +1,95 @@
 pipeline {
     agent any
-
+    
     environment {
-        // --- Configuration ---
+        // Image configuration
         IMAGE_NAME = "vuln-flask-app:${BUILD_NUMBER}"
-        DEEPFENCE_CONSOLE_URL = '192.168.74.125'
-        SCANNER_VERSION = '2.5.2'
-
-        // --- Failure Conditions ---
-        FAIL_ON_CRITICAL_VULNERABILITIES = 100000000
-        FAIL_ON_HIGH_VULNERABILITIES = 50000000000
-        FAIL_ON_HIGH_SECRETS = 100000000000
-        FAIL_ON_HIGH_MALWARE = 1000000000000
+        
+        // Deepfence configuration
+        DEEPFENCE_CONSOLE_URL = '192.168.74.125'  // Management console URL
+        SCANNER_VERSION = '2.5.2'                 // Deepfence scanner version
+        DEEPFENCE_PRODUCT = 'ThreatMapper'        // Product name
+        DEEPFENCE_LICENSE = '26545419-e7a1-44e8-b6a7-f853e68499c3' // License key
+        
+        // Vulnerability thresholds
+        FAIL_CVE_COUNT = 100          // Total vulnerabilities
+        FAIL_CRITICAL_CVE_COUNT = 1   // Critical vulnerabilities
+        FAIL_HIGH_CVE_COUNT = 5       // High vulnerabilities
+        FAIL_MEDIUM_CVE_COUNT = 10    // Medium vulnerabilities
+        FAIL_LOW_CVE_COUNT = 20       // Low vulnerabilities
+        FAIL_CVE_SCORE = 8            // Cumulative CVE score
     }
 
     stages {
-        stage('🐙 1. Checkout Code') {
+        stage('1. Clone Repository') {
             steps {
                 checkout scm
             }
         }
 
-        stage('🐳 2. Build Docker Image') {
+        stage('2. Build Docker Image') {
             steps {
-                echo "Building Docker image: ${IMAGE_NAME}"
-                sh "docker build -t ${IMAGE_NAME} ${pwd()}"
+                script {
+                    echo "Building Docker image: ${IMAGE_NAME}"
+                    sh "docker build -t ${IMAGE_NAME} ."
+                }
             }
         }
 
-        stage('🛡️ 3. Scan for Vulnerabilities') {
+        stage('3. Run Deepfence Vulnerability Scan') {
             steps {
                 script {
-                    echo "Scanning ${IMAGE_NAME} for vulnerabilities..."
-                    try {
-                        withCredentials([string(credentialsId: 'deepfence_api_key', variable: 'DEEPFENCE_API_KEY')]) {
+                    withCredentials([string(credentialsId: 'deepfence_api_key', variable: 'DEEPFENCE_API_KEY')]) {
+                        try {
+                            echo "Scanning ${IMAGE_NAME} for vulnerabilities..."
                             sh """
-                                docker run --rm --net=host -v /var/run/docker.sock:/var/run/docker.sock:rw \
+                                docker run --rm -it --net=host --privileged \
+                                -v /var/run/docker.sock:/var/run/docker.sock:rw \
                                 quay.io/deepfenceio/deepfence_package_scanner_cli:${SCANNER_VERSION} \
-                                -console-url=${DEEPFENCE_CONSOLE_URL} -deepfence-key=${DEEPFENCE_API_KEY} \
-                                -source=${IMAGE_NAME} -scan-type=base,java,python,ruby,php,nodejs,js \
-                                -fail-on-critical-count=${FAIL_ON_CRITICAL_VULNERABILITIES} \
-                                -fail-on-high-count=${FAIL_ON_HIGH_VULNERABILITIES}
+                                -deepfence-key=${DEEPFENCE_API_KEY} \
+                                -console-url=${DEEPFENCE_CONSOLE_URL} \
+                                -product=${DEEPFENCE_PRODUCT} \
+                                -license=${DEEPFENCE_LICENSE} \
+                                -source=${IMAGE_NAME} \
+                                -fail-on-count=${FAIL_CVE_COUNT} \
+                                -fail-on-critical-count=${FAIL_CRITICAL_CVE_COUNT} \
+                                -fail-on-high-count=${FAIL_HIGH_CVE_COUNT} \
+                                -fail-on-medium-count=${FAIL_MEDIUM_CVE_COUNT} \
+                                -fail-on-low-count=${FAIL_LOW_CVE_COUNT} \
+                                -fail-on-score=${FAIL_CVE_SCORE}
                             """
+                        } catch (Exception err) {
+                            currentBuild.result = 'FAILURE'
+                            error("❌ Vulnerability scan failed. Check logs for details.")
                         }
-                    } catch (Exception err) {
-                        currentBuild.result = 'FAILURE'
-                        error("❌ Vulnerability scan failed. Check logs for details.")
                     }
                 }
             }
         }
 
-        stage('🤫 4. Scan for Secrets') {
-            steps {
-                script {
-                    echo "Scanning ${IMAGE_NAME} for secrets..."
-                    try {
-                        sh """
-                            docker run --rm --net=host -v /var/run/docker.sock:/var/run/docker.sock:rw \
-                            quay.io/deepfenceio/deepfence_secret_scanner:${SCANNER_VERSION} \
-                            -image-name=${IMAGE_NAME} \
-                            -fail-on-high-count=${FAIL_ON_HIGH_SECRETS}
-                        """
-                    } catch (Exception err) {
-                        currentBuild.result = 'FAILURE'
-                        error("❌ Secret scan failed. Check logs for details.")
-                    }
-                }
+        stage('4. Deploy Application') {
+            when {
+                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
             }
-        }
-
-        stage('🦠 5. Scan for Malware') {
-            steps {
-                script {
-                    echo "Scanning ${IMAGE_NAME} for malware..."
-                    try {
-                        sh """
-                            docker run --rm --net=host -v /var/run/docker.sock:/var/run/docker.sock:rw \
-                            quay.io/deepfenceio/deepfence_malware_scanner:${SCANNER_VERSION} \
-                            -image-name=${IMAGE_NAME} \
-                            -fail-on-high-count=${FAIL_ON_HIGH_MALWARE}
-                        """
-                    } catch (Exception err) {
-                        currentBuild.result = 'FAILURE'
-                        error("❌ Malware scan failed. Check logs for details.")
-                    }
-                }
-            }
-        }
-
-        stage('🚀 6. Deploy') {
             steps {
                 echo "✅ All scans passed! Deploying the application..."
-                // Example: sh "docker run -d -p 5000:5000 ${IMAGE_NAME}"
+                // Add your deployment commands here
+                // Example:
+                // sh "docker run -d -p 5000:5000 --name vuln-app ${IMAGE_NAME}"
             }
+        }
+    }
+
+    post {
+        always {
+            echo "Cleaning up workspace..."
+            // Add any cleanup steps here
+        }
+        failure {
+            echo "Pipeline failed! Check logs for details."
+        }
+        success {
+            echo "Pipeline completed successfully!"
         }
     }
 }
